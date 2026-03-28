@@ -133,6 +133,97 @@ UIPath-Attendance/
 
 ---
 
+## 🔧 Admin Tool – Student List Generator (Built-in)
+
+To simplify semester updates, this system includes a **built-in Excel → `students.js` generator**.
+
+### 📌 Access
+
+Open the system in professor mode:
+
+```
+https://your-link/index.html?prof=1
+```
+
+A floating **📂 button (bottom-right)** will appear.
+
+Click it to open **Admin Tools → Students.js Generator**.
+
+---
+
+### 📥 How to Use
+
+1. Obtain the official student list from office (Excel file)
+2. Drag & drop the file into the generator panel
+3. Select correct sheets for:
+
+   * Division A
+   * Division B
+4. Click **✔ Process**
+5. Click **⬇ Download students.js**
+6. Replace the existing `students.js` file in the project
+
+---
+
+### ⚙️ What the Tool Handles Automatically
+
+* Detects header row (even if not first row)
+* Extracts **USN + Name**
+* Removes duplicates
+* Ignores empty / invalid rows
+* Sorts students by USN
+* Supports flexible Excel formats
+
+---
+
+### ⚠️ Important Notes
+
+* Excel must contain columns with **“USN”** and **“Name”**
+* Sheet1 → Division A, Sheet2 → Division B (default)
+* Always verify student count before downloading
+* Keep a backup of previous `students.js`
+
+---
+
+### 🎯 Benefits
+
+* No coding required
+* No Python / scripts needed
+* Works directly in browser
+* Reduces update time to **< 1 minute**
+
+---
+
+### 🔐 Visibility
+
+This tool is:
+
+* Available **only in professor mode**
+* Hidden from students
+* Does not affect attendance functionality
+
+---
+
+### 🚀 Recommended Workflow (Each Semester)
+
+1. Get Excel from office
+2. Open system → Admin Tool
+3. Generate `students.js`
+4. Replace file
+5. Done
+
+---
+
+### 🧠 Future Improvements (Optional)
+
+* Auto-download after processing
+* Preview table before export
+* Validation warnings (missing/duplicate entries)
+* Integration with database (advanced use)
+
+---
+
+
 ## 👨‍🏫 Maintained by
 
 **Prof. Pandurang Upparamani**
