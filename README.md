@@ -17,12 +17,23 @@
 
 ## ✨ Features
 
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/1faf9737-c454-43ee-8783-632bffc4d01a" />
+
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/db231174-e205-4c0e-a1e6-cc4ef087aacd" />
+
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/51338373-0c86-44a0-8eda-34464088337d" />
+
+
 ### 🎓 Student Side
 - Select **Division A or B**
 - Enter **USN** — name previews instantly
 - Enter **4-digit session token** from the board
 - One-click submit — permanent success screen after marking
 - Blocks: wrong division, wrong token, invalid USN, duplicate submission
+
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/63dd628d-c14c-4f48-9887-7cf448aa09bb" />
+
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/db6957e6-1798-417c-be53-6934a110ef15" />
 
 ### 👩‍💻 Professor Side
 - Password-protected dashboard (`?prof=1`)
@@ -35,6 +46,8 @@
 - **Live Present / Absent / Total** stats updated instantly
 - **Flash card** notification slides in from right when a student marks attendance
 - **Status badge** — OPEN (green) / PAUSED (yellow) / CLOSED (grey)
+
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/055567ab-73ac-4c7e-87f6-0dd0c73a4078" />
 
 ### 📥 Excel Export (KLS Format)
 - Covers **all sessions** — each session = one column
