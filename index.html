@@ -201,7 +201,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 .result-msg.show { display: block; }
 .result-err  { background: rgba(245,91,91,0.12); color: var(--danger); border: 1px solid rgba(245,91,91,0.3); }
 
-/* FLASH CARD — professor new submission alert */
+/* FLASH CARD */
 #flash-card {
   position: fixed;
   top: 20px; right: 20px;
@@ -234,6 +234,43 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 .field-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; display: block; margin-bottom: 4px; font-weight: 600; }
 .name-preview { font-size: 14px; font-weight: 600; min-height: 22px; margin-bottom: 8px; color: var(--muted); }
 </style>
+
+<!-- Firebase SDK -->
+<script type="module">
+import { initializeApp }                        from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, set, get, onValue, off } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey:            "AIzaSyCIP8LQI0cxcdLsFJhk-gsNWsR9jBRiqVI",
+  authDomain:        "uipath-attendance-firebase.firebaseapp.com",
+  databaseURL:       "https://uipath-attendance-firebase-default-rtdb.firebaseio.com",
+  projectId:         "uipath-attendance-firebase",
+  storageBucket:     "uipath-attendance-firebase.firebasestorage.app",
+  messagingSenderId: "235903440336",
+  appId:             "1:235903440336:web:ce4700b697cafc26c495d5"
+};
+
+const app = initializeApp(firebaseConfig);
+const db  = getDatabase(app);
+const ROOT = ref(db, "attendance");
+
+async function apiGet() {
+  const snap = await get(ROOT);
+  return snap.exists() ? snap.val() : { sessions: [], activeSession: null };
+}
+async function apiPut(data) {
+  await set(ROOT, data);
+}
+function apiListen(callback) {
+  onValue(ROOT, snap => {
+    callback(snap.exists() ? snap.val() : { sessions: [], activeSession: null });
+  });
+}
+function apiUnlisten() { off(ROOT); }
+
+window._fbApi = { apiGet, apiPut, apiListen, apiUnlisten };
+window.dispatchEvent(new Event("fbReady"));
+</script>
 </head>
 <body>
 
@@ -242,7 +279,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   <h2>ISE Dept · UI Path Lab Attendance</h2>
 </header>
 
-<!-- ══════════ HOME ══════════ -->
+<!-- HOME -->
 <div id="page-home" class="page active">
   <div class="container">
     <div class="home-grid">
@@ -262,11 +299,10 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   </div>
 </div>
 
-<!-- ══════════ STUDENT ══════════ -->
+<!-- STUDENT -->
 <div id="page-student" class="page">
   <div class="container">
 
-    <!-- FORM (shown first) -->
     <div id="stu-form-wrap">
       <div class="card" style="max-width:440px;margin:0 auto">
         <h3>Student Attendance</h3>
@@ -298,7 +334,6 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
       </div>
     </div>
 
-    <!-- DONE STATE (permanent - replaces form after successful mark) -->
     <div id="stu-success-wrap" style="display:none">
       <div class="success-card">
         <div class="success-icon">✅</div>
@@ -311,7 +346,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   </div>
 </div>
 
-<!-- ══════════ PROFESSOR ══════════ -->
+<!-- PROFESSOR -->
 <div id="page-prof" class="page">
   <div class="container">
     <div class="section-title">Professor Dashboard</div>
@@ -391,7 +426,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   </div>
 </div>
 
-<!-- FLASH CARD — professor new submission alert -->
+<!-- FLASH CARD -->
 <div id="flash-card">
   <div class="flash-icon">🎉</div>
   <div>
@@ -401,185 +436,185 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 </div>
 
 <script>
-// ── CONFIG ────────────────────────────────────────────────────────────────────
-const BIN_ID    = "69c2a5a0aa77b81da915600d";
-const API_KEY   = "$2a$10$0r2BZmxFrzU01uqwZWEyeuWkt1cugfUAo3I4ze0RlCRsyjNXZEuFW";
-const BASE      = "https://api.jsonbin.io/v3/b/" + BIN_ID;
-const PROF_PASS = "1111";
+window.addEventListener("fbReady", () => {
+  const { apiGet, apiPut, apiListen, apiUnlisten } = window._fbApi;
 
-let timerInterval = null;
-let pollInterval  = null;
-let timerSeconds  = 0;
-let flashTimeout  = null;
-let lastPresentSet = new Set();   // tracks USNs known to be present, to detect new ones
+  // ── CONFIG ──────────────────────────────────────────────────────────────────
+  const PROF_PASS = "1111";
 
-// ── PAGE ROUTING ──────────────────────────────────────────────────────────────
-function showPage(id) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
-}
-function goHome() {
-  clearInterval(pollInterval);
-  showPage("page-home");
-}
-function goStudent() {
-  showPage("page-student");
-}
-function goProf() {
-  showPage("page-prof");
-  setTodayDate();
-  startPolling();
-}
+  let timerInterval  = null;
+  let timerSeconds   = 0;
+  let flashTimeout   = null;
+  let lastPresentSet = new Set();
+  let realtimeOn     = false;
 
-// ── PROF MODAL ────────────────────────────────────────────────────────────────
-function showProfModal() {
-  document.getElementById('prof-password').value = "";
-  document.getElementById('prof-pass-err').style.display = "none";
-  document.getElementById('prof-modal').classList.add('show');
-  setTimeout(() => document.getElementById('prof-password').focus(), 100);
-}
-function closeProfModal() {
-  document.getElementById('prof-modal').classList.remove('show');
-}
-function checkProfPass() {
-  if (document.getElementById('prof-password').value === PROF_PASS) {
-    closeProfModal();
-    goProf();
-  } else {
-    document.getElementById('prof-pass-err').style.display = "block";
-    document.getElementById('prof-password').value = "";
+  // ── PAGE ROUTING ────────────────────────────────────────────────────────────
+  function showPage(id) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
   }
-}
 
-// ── API ───────────────────────────────────────────────────────────────────────
-async function apiGet() {
-  const r = await fetch(BASE + "/latest", { headers: { 'X-Master-Key': API_KEY } });
-  return (await r.json()).record;
-}
-async function apiPut(data) {
-  await fetch(BASE, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY },
-    body: JSON.stringify(data)
-  });
-}
-
-// ── SESSION ───────────────────────────────────────────────────────────────────
-function randomToken() { return Math.floor(1000 + Math.random() * 9000); }
-
-async function openSession() {
-  const data = await apiGet();
-  if (data.activeSession) { alert("A session is already open. Close it first."); return; }
-  const session = {
-    division: document.getElementById('prof-division').value,
-    date:     document.getElementById('prof-date').value,
-    period:   document.getElementById('prof-period').value,
-    token:    randomToken(),
-    present:  [],
-    times:    {},
-    paused:   false
+  window.goHome = function() {
+    clearInterval(timerInterval);
+    stopRealtime();
+    showPage("page-home");
   };
-  data.activeSession = session;
-  await apiPut(data);
-  renderSession(session);
-  startTimer(300);
-}
 
-async function pauseSession() {
-  const data = await apiGet();
-  if (!data.activeSession) return;
-  data.activeSession.paused = true;
-  await apiPut(data);
-  setStatusBadge("paused");
-  clearInterval(timerInterval);
-}
+  window.goStudent = function() {
+    showPage("page-student");
+  };
 
-async function resumeSession() {
-  const data = await apiGet();
-  if (!data.activeSession) return;
-  data.activeSession.paused = false;
-  await apiPut(data);
-  setStatusBadge("open");
-  startTimer(timerSeconds);
-}
+  function goProf() {
+    showPage("page-prof");
+    setTodayDate();
+    startRealtime();
+  }
 
-async function closeSession() {
-  if (!confirm("Close this session?")) return;
-  const data = await apiGet();
-  if (!data.activeSession) return;
-  if (!data.sessions) data.sessions = [];
-  data.sessions.push(data.activeSession);
-  data.activeSession = null;
-  await apiPut(data);
-  clearInterval(timerInterval);
-  document.getElementById('token-display').style.display = "none";
-  setStatusBadge("closed");
-  document.getElementById('present-list').innerHTML = "";
-  document.getElementById('absent-list').innerHTML  = "";
-  updateStats(0, 0, 0);
-}
+  // ── PROF MODAL ──────────────────────────────────────────────────────────────
+  window.showProfModal = function() {
+    document.getElementById('prof-password').value = "";
+    document.getElementById('prof-pass-err').style.display = "none";
+    document.getElementById('prof-modal').classList.add('show');
+    setTimeout(() => document.getElementById('prof-password').focus(), 100);
+  };
 
-// ── TIMER ─────────────────────────────────────────────────────────────────────
-function startTimer(seconds) {
-  clearInterval(timerInterval);
-  timerSeconds = seconds;
-  timerInterval = setInterval(() => {
-    timerSeconds--;
-    const m = Math.floor(timerSeconds / 60);
-    const s = String(timerSeconds % 60).padStart(2, '0');
-    const el = document.getElementById('timer-text');
-    if (el) el.textContent = `⏱ ${m}:${s} remaining`;
-    if (timerSeconds <= 0) { clearInterval(timerInterval); closeSession(); }
-  }, 1000);
-}
+  window.closeProfModal = function() {
+    document.getElementById('prof-modal').classList.remove('show');
+  };
 
-// ── RENDER ────────────────────────────────────────────────────────────────────
-function renderSession(sess) {
-  document.getElementById('token-display').style.display = "block";
-  document.getElementById('token-value').textContent = sess.token;
-  setStatusBadge(sess.paused ? "paused" : "open");
-}
-function setStatusBadge(state) {
-  const el = document.getElementById('status-badge');
-  el.className = "status-badge";
-  if (state === "open")   { el.classList.add('status-open');   el.innerHTML = '<span class="dot"></span>OPEN'; }
-  if (state === "paused") { el.classList.add('status-paused'); el.innerHTML = '<span class="dot"></span>PAUSED'; }
-  if (state === "closed") { el.classList.add('status-closed'); el.innerHTML = '<span class="dot"></span>CLOSED'; }
-}
-function updateStats(p, a, t) {
-  document.getElementById('stat-present').textContent = p;
-  document.getElementById('stat-absent').textContent  = a;
-  document.getElementById('stat-total').textContent   = t;
-}
+  window.checkProfPass = function() {
+    if (document.getElementById('prof-password').value === PROF_PASS) {
+      closeProfModal();
+      goProf();
+    } else {
+      document.getElementById('prof-pass-err').style.display = "block";
+      document.getElementById('prof-password').value = "";
+    }
+  };
 
-function showFlash(name, usn) {
-  document.getElementById('flash-name').textContent = name;
-  document.getElementById('flash-usn').textContent  = usn + " · just marked present";
-  const card = document.getElementById('flash-card');
-  card.classList.add('show');
-  clearTimeout(flashTimeout);
-  flashTimeout = setTimeout(() => card.classList.remove('show'), 3500);
-}
+  // ── SESSION ──────────────────────────────────────────────────────────────────
+  function randomToken() { return Math.floor(1000 + Math.random() * 9000); }
 
-// ── POLLING ───────────────────────────────────────────────────────────────────
-function startPolling() {
-  clearInterval(pollInterval);
-  lastPresentSet = new Set();   // reset so existing present don't flash on first load
-  loadData();
-  pollInterval = setInterval(loadData, 3000);
-}
+  window.openSession = async function() {
+    const data = await apiGet();
+    if (data.activeSession) { alert("A session is already open. Close it first."); return; }
+    const session = {
+      division: document.getElementById('prof-division').value,
+      date:     document.getElementById('prof-date').value,
+      period:   document.getElementById('prof-period').value,
+      token:    randomToken(),
+      present:  [],
+      times:    {},
+      paused:   false,
+      startTime: Date.now()
+    };
+    if (!data.sessions) data.sessions = [];
+    data.activeSession = session;
+    await apiPut(data);
+    renderSession(session);
+    startTimer(300);
+  };
 
-async function loadData() {
-  try {
+  window.pauseSession = async function() {
     const data = await apiGet();
     if (!data.activeSession) return;
+    data.activeSession.paused = true;
+    await apiPut(data);
+    setStatusBadge("paused");
+    clearInterval(timerInterval);
+  };
+
+  window.resumeSession = async function() {
+    const data = await apiGet();
+    if (!data.activeSession) return;
+    data.activeSession.paused = false;
+    await apiPut(data);
+    setStatusBadge("open");
+    startTimer(timerSeconds);
+  };
+
+  window.closeSession = async function() {
+    if (!confirm("Close this session?")) return;
+    const data = await apiGet();
+    if (!data.activeSession) return;
+    if (!data.sessions) data.sessions = [];
+    data.sessions.push(data.activeSession);
+    data.activeSession = null;
+    await apiPut(data);
+    clearInterval(timerInterval);
+    document.getElementById('token-display').style.display = "none";
+    setStatusBadge("closed");
+    document.getElementById('present-list').innerHTML = "";
+    document.getElementById('absent-list').innerHTML  = "";
+    updateStats(0, 0, 0);
+  };
+
+  // ── TIMER ────────────────────────────────────────────────────────────────────
+  function startTimer(seconds) {
+    clearInterval(timerInterval);
+    timerSeconds = seconds;
+    timerInterval = setInterval(() => {
+      timerSeconds--;
+      const m  = Math.floor(timerSeconds / 60);
+      const s  = String(timerSeconds % 60).padStart(2, '0');
+      const el = document.getElementById('timer-text');
+      if (el) el.textContent = `⏱ ${m}:${s} remaining`;
+      if (timerSeconds <= 0) { clearInterval(timerInterval); window.closeSession(); }
+    }, 1000);
+  }
+
+  // ── RENDER ───────────────────────────────────────────────────────────────────
+  function renderSession(sess) {
+    document.getElementById('token-display').style.display = "block";
+    document.getElementById('token-value').textContent = sess.token;
+    setStatusBadge(sess.paused ? "paused" : "open");
+  }
+
+  function setStatusBadge(state) {
+    const el = document.getElementById('status-badge');
+    el.className = "status-badge";
+    if (state === "open")   { el.classList.add('status-open');   el.innerHTML = '<span class="dot"></span>OPEN'; }
+    if (state === "paused") { el.classList.add('status-paused'); el.innerHTML = '<span class="dot"></span>PAUSED'; }
+    if (state === "closed") { el.classList.add('status-closed'); el.innerHTML = '<span class="dot"></span>CLOSED'; }
+  }
+
+  function updateStats(p, a, t) {
+    document.getElementById('stat-present').textContent = p;
+    document.getElementById('stat-absent').textContent  = a;
+    document.getElementById('stat-total').textContent   = t;
+  }
+
+  function showFlash(name, usn) {
+    document.getElementById('flash-name').textContent = name;
+    document.getElementById('flash-usn').textContent  = usn + " · just marked present";
+    const card = document.getElementById('flash-card');
+    card.classList.add('show');
+    clearTimeout(flashTimeout);
+    flashTimeout = setTimeout(() => card.classList.remove('show'), 3500);
+  }
+
+  // ── REAL-TIME LISTENER (replaces polling) ────────────────────────────────────
+  function startRealtime() {
+    if (realtimeOn) return;
+    realtimeOn = true;
+    lastPresentSet = new Set();
+    apiListen(data => renderLiveData(data));
+  }
+
+  function stopRealtime() {
+    apiUnlisten();
+    realtimeOn = false;
+  }
+
+  function renderLiveData(data) {
+    if (!data || !data.activeSession) return;
     const sess       = data.activeSession;
     const students   = STUDENTS[sess.division] || [];
     const presentIds = sess.present || [];
 
     renderSession(sess);
 
-    // Detect newly arrived students → flash card on professor screen
+    // Flash card for newly arrived students
     presentIds.forEach(uid => {
       if (!lastPresentSet.has(uid)) {
         const stu = students.find(s => s.id === uid);
@@ -598,7 +633,7 @@ async function loadData() {
       pList.appendChild(li);
     });
 
-    // Absent list — NOTE: separate loop, NOT inside present forEach
+    // Absent list
     const aList = document.getElementById('absent-list');
     aList.innerHTML = "";
     students.forEach(s => {
@@ -610,189 +645,152 @@ async function loadData() {
     });
 
     updateStats(presentIds.length, students.length - presentIds.length, students.length);
-  } catch(e) { /* ignore network hiccup */ }
-}
-
-// ── STUDENT ───────────────────────────────────────────────────────────────────
-function previewName() {
-  const div = document.getElementById('stu-division').value;
-  const usn = document.getElementById('stu-usn').value.trim().toUpperCase();
-  document.getElementById('stu-usn').value = usn;
-  const stu = STUDENTS[div] && STUDENTS[div].find(s => s.id === usn);
-  const el  = document.getElementById('name-preview');
-  el.textContent = stu ? stu.name : (usn ? "USN not found" : "—");
-  el.style.color = stu ? 'var(--accent2)' : 'var(--muted)';
-}
-
-function showError(msg) {
-  const el = document.getElementById('stu-result');
-  el.textContent = msg;
-  el.className   = "result-msg show result-err";
-  document.getElementById('stu-submit-btn').disabled = false;
-}
-
-// Called on success: hide form permanently, show done card — no redirect, no way back
-function showSuccessState(stuName) {
-  document.getElementById('stu-form-wrap').style.display    = "none";
-  document.getElementById('success-name').textContent       = stuName;
-  document.getElementById('stu-success-wrap').style.display = "block";
-  // Page stays here permanently — student must close the tab
-}
-
-function resetStudentForm() {
-  document.getElementById('stu-division').disabled = false;
-  document.getElementById('stu-usn').disabled      = false;
-  document.getElementById('stu-token').disabled    = false;
-  document.getElementById('stu-usn').value      = "";
-  document.getElementById('stu-token').value    = "";
-  document.getElementById('name-preview').textContent = "—";
-  document.getElementById('name-preview').style.color = 'var(--muted)';
-  document.getElementById('stu-result').className    = "result-msg";
-  document.getElementById('stu-submit-btn').disabled = false;
-  document.getElementById('stu-form-wrap').style.display    = "block";
-  document.getElementById('stu-success-wrap').style.display = "none";
-}
-
-async function submitAttendance() {
-  const div   = document.getElementById('stu-division').value;
-  const usn   = document.getElementById('stu-usn').value.trim().toUpperCase();
-  const token = document.getElementById('stu-token').value.trim();
-
-  if (!usn || !token) { showError("Please fill in your USN and token."); return; }
-
-  const stu = STUDENTS[div] && STUDENTS[div].find(s => s.id === usn);
-  if (!stu) { showError("USN not found in Division " + div + "."); return; }
-
-  document.getElementById('stu-submit-btn').disabled = true;
-
-  try {
-    const data = await apiGet();
-
-    if (!data.activeSession)                                     { showError("No active session. Ask your professor."); }
-    else if (data.activeSession.paused)                          { showError("Session is paused. Wait for professor."); }
-    else if (String(data.activeSession.token) !== String(token)) { showError("Wrong token — check the board."); }
-    else if (data.activeSession.division !== div)                { showError("Wrong division selected for this session."); }
-    else if (data.activeSession.present.includes(usn))           {
-      // Disable inputs so student cannot try a different USN
-      document.getElementById('stu-division').disabled = true;
-      document.getElementById('stu-usn').disabled      = true;
-      document.getElementById('stu-token').disabled    = true;
-      showError("⚠️ Already marked! Your attendance was recorded earlier.");
-    }
-    else {
-      data.activeSession.present = data.activeSession.present || [];
-      data.activeSession.times   = data.activeSession.times   || {};
-      data.activeSession.present.push(usn);
-      data.activeSession.times[usn] = new Date().toLocaleTimeString('en-IN');
-      await apiPut(data);
-      showSuccessState(stu.name);
-    }
-  } catch(e) {
-    showError("Network error. Please try again.");
   }
-}
 
-// ── EXCEL EXPORT — KLS Format, all sessions as columns ───────────────────────
-// Reads all saved sessions from JSONbin + activeSession if open.
-// Each session = one date-period column. Up to 25 columns shown.
-// Layout: rows 1-4 merged header, row 5 spacer, row 6 timestamp,
-//         row 7 rotated col headers, row 8 DAY TOTAL, rows 9+ students P/A
-function exportExcel() {
-  apiGet().then(data => {
-    // Collect all sessions: saved ones + active if exists
-    let allSessions = Array.isArray(data.sessions) ? [...data.sessions] : [];
-    if (data.activeSession) allSessions.push(data.activeSession);
+  // ── STUDENT ──────────────────────────────────────────────────────────────────
+  window.previewName = function() {
+    const div = document.getElementById('stu-division').value;
+    const usn = document.getElementById('stu-usn').value.trim().toUpperCase();
+    document.getElementById('stu-usn').value = usn;
+    const stu = STUDENTS[div] && STUDENTS[div].find(s => s.id === usn);
+    const el  = document.getElementById('name-preview');
+    el.textContent = stu ? stu.name : (usn ? "USN not found" : "—");
+    el.style.color = stu ? 'var(--accent2)' : 'var(--muted)';
+  };
 
-    if (allSessions.length === 0) { alert("No sessions available to export."); return; }
+  function showError(msg) {
+    const el = document.getElementById('stu-result');
+    el.textContent = msg;
+    el.className   = "result-msg show result-err";
+    document.getElementById('stu-submit-btn').disabled = false;
+  }
 
-    // Take last 25 max, sorted by date+period
-    allSessions.sort((a, b) => {
-      const ka = (a.date || "") + (a.period || "");
-      const kb = (b.date || "") + (b.period || "");
-      return ka.localeCompare(kb);
-    });
-    if (allSessions.length > 25) allSessions = allSessions.slice(-25);
+  function showSuccessState(stuName) {
+    document.getElementById('stu-form-wrap').style.display    = "none";
+    document.getElementById('success-name').textContent       = stuName;
+    document.getElementById('stu-success-wrap').style.display = "block";
+  }
 
-    // Determine division from first session (all should be same div per export)
-    // Group by division — prompt if mixed (edge case)
-    const divisions = [...new Set(allSessions.map(s => s.division))];
-    let division = divisions[0];
-    if (divisions.length > 1) {
-      division = (prompt(`Sessions span divisions: ${divisions.join(", ")}.\nEnter division to export (A or B):`) || "A").toUpperCase().trim();
-      allSessions = allSessions.filter(s => s.division === division);
+  window.submitAttendance = async function() {
+    const div   = document.getElementById('stu-division').value;
+    const usn   = document.getElementById('stu-usn').value.trim().toUpperCase();
+    const token = document.getElementById('stu-token').value.trim();
+
+    if (!usn || !token) { showError("Please fill in your USN and token."); return; }
+
+    const stu = STUDENTS[div] && STUDENTS[div].find(s => s.id === usn);
+    if (!stu) { showError("USN not found in Division " + div + "."); return; }
+
+    document.getElementById('stu-submit-btn').disabled = true;
+
+    try {
+      const data = await apiGet();
+
+      if (!data.activeSession)                                      { showError("No active session. Ask your professor."); }
+      else if (data.activeSession.paused)                           { showError("Session is paused. Wait for professor."); }
+      else if (String(data.activeSession.token) !== String(token))  { showError("Wrong token — check the board."); }
+      else if (data.activeSession.division !== div)                 { showError("Wrong division selected for this session."); }
+      else if ((data.activeSession.present || []).includes(usn))    {
+        document.getElementById('stu-division').disabled = true;
+        document.getElementById('stu-usn').disabled      = true;
+        document.getElementById('stu-token').disabled    = true;
+        showError("⚠️ Already marked! Your attendance was recorded earlier.");
+      }
+      else {
+        data.activeSession.present = data.activeSession.present || [];
+        data.activeSession.times   = data.activeSession.times   || {};
+        data.activeSession.present.push(usn);
+        data.activeSession.times[usn] = new Date().toLocaleTimeString('en-IN');
+        await apiPut(data);
+        showSuccessState(stu.name);
+      }
+    } catch(e) {
+      showError("Network error. Please try again.");
+      document.getElementById('stu-submit-btn').disabled = false;
     }
+  };
 
-    const students = STUDENTS[division] || [];
-    const nSess    = allSessions.length;
+  // ── EXCEL EXPORT — KLS Format ────────────────────────────────────────────────
+  window.exportExcel = function() {
+    apiGet().then(data => {
+      let allSessions = Array.isArray(data.sessions) ? [...data.sessions] : [];
+      if (data.activeSession) allSessions.push(data.activeSession);
 
-    // ── Styles ────────────────────────────────────────────────────────────
-    const S = {
-      hdrFont: (sz, bold) => ({ name:"Arial", sz, bold:!!bold, color:{rgb:"FFFFFF"} }),
-      bodyFont: { name:"Arial", sz:9 },
-      boldFont: { name:"Arial", sz:9, bold:true },
-      fill:   hex => ({ patternType:"solid", fgColor:{rgb:hex} }),
-      border: { top:{style:"thin"}, bottom:{style:"thin"}, left:{style:"thin"}, right:{style:"thin"} },
-      center: { horizontal:"center", vertical:"center" },
-      left:   { horizontal:"left",   vertical:"center" },
-      right:  { horizontal:"right",  vertical:"center" },
-      rotated:{ horizontal:"center", vertical:"bottom", textRotation:90, wrapText:true },
-    };
+      if (allSessions.length === 0) { alert("No sessions available to export."); return; }
 
-    // Col layout: A=SI, B=USN, C=Name, D=Total, E=%, then F onwards = sessions
-    const FIXED = 5;
-    const NCOLS = FIXED + nSess;
-    const NROWS = 8 + students.length;
-
-    const ws = {};
-    const merges = [];
-
-    function C(r, c, value, style) {
-      ws[XLSX.utils.encode_cell({r, c})] = { v:value, t:typeof value==="number"?"n":"s", s:style||{} };
-    }
-    function N(r, c, value, style) {
-      ws[XLSX.utils.encode_cell({r, c})] = { v:value, t:"n", s:style||{} };
-    }
-
-    const lastColLetter = XLSX.utils.encode_col(NCOLS - 1);
-
-    // Rows 0-3: merged institution headers
-    [
-      ["KLS Gogte Institute of Technology",               14, true,  "1F3864"],
-      ["Gogte Institute of Technology, Belagavi",         11, false, "2E4D8A"],
-      ["Department of Information Science & Engineering", 10, false, "2E4D8A"],
-      [`UI Path Lab  |  ISE Dept  |  Division ${division}  |  2025-26`, 10, true, "2E4D8A"],
-    ].forEach(([txt, sz, bold, bg], ri) => {
-      C(ri, 0, txt, {
-        font: S.hdrFont(sz, bold), fill: S.fill(bg),
-        alignment: { horizontal:"center", vertical:"center" }
+      allSessions.sort((a, b) => {
+        const ka = (a.date || "") + (a.period || "");
+        const kb = (b.date || "") + (b.period || "");
+        return ka.localeCompare(kb);
       });
-      merges.push({ s:{r:ri,c:0}, e:{r:ri,c:NCOLS-1} });
-    });
+      if (allSessions.length > 25) allSessions = allSessions.slice(-25);
 
-    // Row 5: Generated timestamp in last col
-    const now = new Date();
-    const ts  = `Generated: ${now.toLocaleDateString('en-IN')}, ${now.toLocaleTimeString('en-IN')}`;
-    C(5, NCOLS-1, ts, {
-      font: { name:"Arial", sz:8, italic:true, color:{rgb:"888888"} },
-      alignment: S.right
-    });
+      const divisions = [...new Set(allSessions.map(s => s.division))];
+      let division = divisions[0];
+      if (divisions.length > 1) {
+        division = (prompt(`Sessions span divisions: ${divisions.join(", ")}.\nEnter division to export (A or B):`) || "A").toUpperCase().trim();
+        allSessions = allSessions.filter(s => s.division === division);
+      }
 
-    // Row 6: Column headers — fixed cols
-    ["SI","USN","Name","Total","%"].forEach((lbl, c) => {
-      C(6, c, lbl, {
-        font:S.hdrFont(9,true), fill:S.fill("2B4590"),
-        border:S.border, alignment:S.center
+      const students = STUDENTS[division] || [];
+      const nSess    = allSessions.length;
+
+      const S = {
+        hdrFont: (sz, bold) => ({ name:"Arial", sz, bold:!!bold, color:{rgb:"FFFFFF"} }),
+        bodyFont: { name:"Arial", sz:9 },
+        boldFont: { name:"Arial", sz:9, bold:true },
+        fill:   hex => ({ patternType:"solid", fgColor:{rgb:hex} }),
+        border: { top:{style:"thin"}, bottom:{style:"thin"}, left:{style:"thin"}, right:{style:"thin"} },
+        center: { horizontal:"center", vertical:"center" },
+        left:   { horizontal:"left",   vertical:"center" },
+        right:  { horizontal:"right",  vertical:"center" },
+        rotated:{ horizontal:"center", vertical:"bottom", textRotation:90, wrapText:true },
+      };
+
+      const FIXED = 5;
+      const NCOLS = FIXED + nSess;
+      const NROWS = 8 + students.length;
+
+      const ws = {};
+      const merges = [];
+
+      function C(r, c, value, style) {
+        ws[XLSX.utils.encode_cell({r, c})] = { v:value, t:typeof value==="number"?"n":"s", s:style||{} };
+      }
+      function N(r, c, value, style) {
+        ws[XLSX.utils.encode_cell({r, c})] = { v:value, t:"n", s:style||{} };
+      }
+
+      // Rows 0-3: merged institution headers
+      [
+        ["KLS Gogte Institute of Technology",               14, true,  "1F3864"],
+        ["Gogte Institute of Technology, Belagavi",         11, false, "2E4D8A"],
+        ["Department of Information Science & Engineering", 10, false, "2E4D8A"],
+        [`UI Path Lab  |  ISE Dept  |  Division ${division}  |  2025-26`, 10, true, "2E4D8A"],
+      ].forEach(([txt, sz, bold, bg], ri) => {
+        C(ri, 0, txt, {
+          font: S.hdrFont(sz, bold), fill: S.fill(bg),
+          alignment: { horizontal:"center", vertical:"center" }
+        });
+        merges.push({ s:{r:ri,c:0}, e:{r:ri,c:NCOLS-1} });
       });
-    });
-    // Row 6: Session date-period headers — rotated
-    allSessions.forEach((sess, si) => {
-      // Convert yyyy-mm-dd → dd.mm.yyyy
-      const raw   = sess.date || "?";
-      const parts = raw.split("-");
-      const dLabel = parts.length === 3
-        ? `${parts[2]}.${parts[1]}.${parts[0]}`
-        : raw;
-      // Convert HH:MM (24h) → 8.30am style
+
+      // Row 5: timestamp
+      const now = new Date();
+      const ts  = `Generated: ${now.toLocaleDateString('en-IN')}, ${now.toLocaleTimeString('en-IN')}`;
+      C(5, NCOLS-1, ts, {
+        font: { name:"Arial", sz:8, italic:true, color:{rgb:"888888"} },
+        alignment: S.right
+      });
+
+      // Row 6: column headers
+      ["SI","USN","Name","Total","%"].forEach((lbl, c) => {
+        C(6, c, lbl, {
+          font:S.hdrFont(9,true), fill:S.fill("2B4590"),
+          border:S.border, alignment:S.center
+        });
+      });
+
       function fmtTime(t) {
         if (!t || !t.includes(':')) return t || "?";
         const [hStr, mStr] = t.split(':');
@@ -803,115 +801,96 @@ function exportExcel() {
         if (h === 0) h = 12;
         return `${h}.${m}${ampm}`;
       }
-      const label = dLabel + "\n" + fmtTime(sess.period);
-      C(6, FIXED + si, label, {
-        font:S.hdrFont(8,true), fill:S.fill("2B4590"),
-        border:S.border, alignment:S.rotated
-      });
-    });
 
-    // Row 7: DAY TOTAL
-    C(7, 0, "DAY TOTAL", {
-      font:{ name:"Arial", sz:10, bold:true, color:{rgb:"FFFFFF"} },
-      fill:S.fill("4A5568"), alignment:S.center
-    });
-    merges.push({ s:{r:7,c:0}, e:{r:7,c:FIXED-1} });
-    // Day totals per session
-    allSessions.forEach((sess, si) => {
-      N(7, FIXED+si, (sess.present||[]).length, {
-        font:S.boldFont, fill:S.fill("C5D9F1"),
-        border:S.border, alignment:S.center
-      });
-    });
-
-    // Rows 8+: Students
-    students.forEach((stu, i) => {
-      const row     = 8 + i;
-      const rowFill = S.fill(i % 2 === 0 ? "FFFFFF" : "EEF2FF");
-
-      // Count total present across all sessions
-      let totalPresent = 0;
-      allSessions.forEach(sess => {
-        if ((sess.present||[]).includes(stu.id)) totalPresent++;
-      });
-      const pct = nSess > 0 ? Math.round((totalPresent / nSess) * 100) : 0;
-
-      N(row, 0, i+1,         { font:S.bodyFont, fill:rowFill, border:S.border, alignment:S.center });
-      C(row, 1, stu.id,      { font:S.bodyFont, fill:rowFill, border:S.border, alignment:S.center });
-      C(row, 2, stu.name,    { font:S.bodyFont, fill:rowFill, border:S.border, alignment:S.left   });
-      N(row, 3, totalPresent,{ font:S.bodyFont, fill:rowFill, border:S.border, alignment:S.center });
-      N(row, 4, pct,         { font:S.bodyFont, fill:rowFill, border:S.border, alignment:S.center, numFmt:"0" });
-
-      // P / A per session
       allSessions.forEach((sess, si) => {
-        const isP = (sess.present||[]).includes(stu.id);
-        C(row, FIXED+si, isP ? "P" : "A", {
-          font:  isP
-            ? { name:"Arial", sz:9, bold:true, color:{rgb:"276221"} }
-            : { name:"Arial", sz:9, bold:true, color:{rgb:"9C0006"} },
-          fill:  S.fill(isP ? "C6EFCE" : "FFC7CE"),
-          border: S.border, alignment: S.center
+        const raw    = sess.date || "?";
+        const parts  = raw.split("-");
+        const dLabel = parts.length === 3 ? `${parts[2]}.${parts[1]}.${parts[0]}` : raw;
+        const label  = dLabel + "\n" + fmtTime(sess.period);
+        C(6, FIXED + si, label, {
+          font:S.hdrFont(8,true), fill:S.fill("2B4590"),
+          border:S.border, alignment:S.rotated
         });
       });
-    });
 
-    // Sheet metadata
-    ws['!ref']    = XLSX.utils.encode_range({ s:{r:0,c:0}, e:{r:NROWS-1,c:NCOLS-1} });
-    ws['!merges'] = merges;
-    ws['!cols']   = [
-      {wch:5},   // A SI
-      {wch:16},  // B USN
-      {wch:30},  // C Name
-      {wch:7},   // D Total
-      {wch:6},   // E %
-      ...allSessions.map(() => ({wch:6}))   // session cols
-    ];
-    ws['!rows'] = [
-      {hpt:22},{hpt:18},{hpt:16},{hpt:16},  // header rows 0-3
-      {hpt:6},                               // spacer row 4
-      {hpt:14},                              // timestamp row 5
-      {hpt:72},                              // rotated header row 6
-      {hpt:16},                              // DAY TOTAL row 7
-    ];
+      // Row 7: DAY TOTAL
+      C(7, 0, "DAY TOTAL", {
+        font:{ name:"Arial", sz:10, bold:true, color:{rgb:"FFFFFF"} },
+        fill:S.fill("4A5568"), alignment:S.center
+      });
+      merges.push({ s:{r:7,c:0}, e:{r:7,c:FIXED-1} });
+      allSessions.forEach((sess, si) => {
+        N(7, FIXED+si, (sess.present||[]).length, {
+          font:S.boldFont, fill:S.fill("C5D9F1"),
+          border:S.border, alignment:S.center
+        });
+      });
 
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Attendance");
+      // Rows 8+: Students
+      students.forEach((stu, i) => {
+        const row     = 8 + i;
+        const rowFill = S.fill(i % 2 === 0 ? "FFFFFF" : "EEF2FF");
+        let totalPresent = 0;
+        allSessions.forEach(sess => {
+          if ((sess.present||[]).includes(stu.id)) totalPresent++;
+        });
+        const pct = nSess > 0 ? Math.round((totalPresent / nSess) * 100) : 0;
 
-    // Freeze rows 1–8 (headers + DAY TOTAL) and cols A–E (SI,USN,Name,Total,%)
-    // Correct SheetJS API: !sheetViews with state:'frozen'
-    // topLeftCell = first scrollable cell = col F (index 5), row 9 (index 8) → "F9"
-    ws['!sheetViews'] = [{
-      state: 'frozen',
-      xSplit: 5,
-      ySplit: 8,
-      topLeftCell: 'F9',
-      activeCell: 'F9',
-      sqref: 'F9'
-    }];
+        N(row, 0, i+1,          { font:S.bodyFont, fill:rowFill, border:S.border, alignment:S.center });
+        C(row, 1, stu.id,       { font:S.bodyFont, fill:rowFill, border:S.border, alignment:S.center });
+        C(row, 2, stu.name,     { font:S.bodyFont, fill:rowFill, border:S.border, alignment:S.left   });
+        N(row, 3, totalPresent, { font:S.bodyFont, fill:rowFill, border:S.border, alignment:S.center });
+        N(row, 4, pct,          { font:S.bodyFont, fill:rowFill, border:S.border, alignment:S.center, numFmt:"0" });
 
-    const dateStr = new Date().toISOString().slice(0,10);
-    XLSX.writeFile(wb, `Attendance_UIPath_Div${division}_${dateStr}.xlsx`);
+        allSessions.forEach((sess, si) => {
+          const isP = (sess.present||[]).includes(stu.id);
+          C(row, FIXED+si, isP ? "P" : "A", {
+            font:  isP
+              ? { name:"Arial", sz:9, bold:true, color:{rgb:"276221"} }
+              : { name:"Arial", sz:9, bold:true, color:{rgb:"9C0006"} },
+            fill:  S.fill(isP ? "C6EFCE" : "FFC7CE"),
+            border: S.border, alignment: S.center
+          });
+        });
+      });
 
-  }).catch(e => { console.error(e); alert("Failed to fetch data. Try again."); });
-}
+      ws['!ref']    = XLSX.utils.encode_range({ s:{r:0,c:0}, e:{r:NROWS-1,c:NCOLS-1} });
+      ws['!merges'] = merges;
+      ws['!cols']   = [
+        {wch:5}, {wch:16}, {wch:30}, {wch:7}, {wch:6},
+        ...allSessions.map(() => ({wch:6}))
+      ];
+      ws['!rows'] = [
+        {hpt:22},{hpt:18},{hpt:16},{hpt:16},
+        {hpt:6}, {hpt:14},{hpt:72},{hpt:16},
+      ];
+      ws['!sheetViews'] = [{
+        state: 'frozen', xSplit: 5, ySplit: 8,
+        topLeftCell: 'F9', activeCell: 'F9', sqref: 'F9'
+      }];
 
-// ── INIT ──────────────────────────────────────────────────────────────────────
-function setTodayDate() {
-  const d   = new Date();
-  const pad = n => String(n).padStart(2,'0');
-  document.getElementById('prof-date').value =
-    `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
-  // Set period time to current time
-  document.getElementById('prof-period').value =
-    `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Attendance");
+      const dateStr = new Date().toISOString().slice(0,10);
+      XLSX.writeFile(wb, `Attendance_UIPath_Div${division}_${dateStr}.xlsx`);
 
-document.addEventListener("DOMContentLoaded", () => {
+    }).catch(e => { console.error(e); alert("Failed to fetch data. Try again."); });
+  };
+
+  // ── INIT ─────────────────────────────────────────────────────────────────────
+  function setTodayDate() {
+    const d   = new Date();
+    const pad = n => String(n).padStart(2,'0');
+    document.getElementById('prof-date').value   = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    document.getElementById('prof-period').value = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
   if (new URLSearchParams(location.search).get("prof") === "1") {
     document.getElementById('prof-home-card').style.display = "block";
   }
   setTodayDate();
-});
+
+}); // end fbReady
 </script>
 </body>
 </html>
