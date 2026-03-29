@@ -551,6 +551,12 @@ window.dispatchEvent(new Event("fbReady"));
 window.addEventListener("fbReady", () => {
   const { apiGet, apiPut, apiListen, apiUnlisten } = window._fbApi;
 
+  // Sanitize localStorage — clear if corrupted
+  try {
+    const _s = localStorage.getItem('att_cfg');
+    if (_s) JSON.parse(_s); // will throw if corrupted
+  } catch(e) { localStorage.removeItem('att_cfg'); }
+
   // ── CONFIG ──────────────────────────────────────────────────────────────────
   const PROF_PASS = "1111";
 
@@ -1023,9 +1029,11 @@ window.addEventListener("fbReady", () => {
     cfgApply(); cfgFill();
   }
   function cfgApply() {
+    try {
     const _t=document.getElementById('page-title'),_h=document.getElementById('header-sub');
     if(_t)_t.textContent='Attendance · '+cfg.sub;
     if(_h)_h.textContent=cfg.dept.replace('Department of ','')+' · '+cfg.sub+' Attendance';
+    } catch(e){}
   }
   window.cfgSave = function() {
     ['inst1','inst2','dept','sub','code','prof','year'].forEach(k => {
@@ -1041,18 +1049,18 @@ window.addEventListener("fbReady", () => {
   window.cfgReset = function() {
     if(!confirm('Reset all config to defaults?')) return;
     localStorage.removeItem('att_cfg');
-    cfg=Object.assign({},CFG_DEF); cfgApply(); cfgFill();
+    cfg=Object.assign({},CFG_DEF);
+    try { cfgApply(); cfgFill(); } catch(e){}
   };
   function cfgFill() {
-    document.getElementById('cfg-inst1').value=cfg.inst1;
-    document.getElementById('cfg-inst2').value=cfg.inst2;
-    document.getElementById('cfg-dept').value=cfg.dept;
-    document.getElementById('cfg-sub').value=cfg.sub;
-    document.getElementById('cfg-code').value=cfg.code;
-    document.getElementById('cfg-prof').value=cfg.prof;
-    document.getElementById('cfg-year').value=cfg.year;
-    document.getElementById('cfg-diva').value=cfg.divA;
-    document.getElementById('cfg-divb').value=cfg.divB;
+    try {
+    const _s=(id,v)=>{const e=document.getElementById(id);if(e)e.value=v;};
+    _s('cfg-inst1',cfg.inst1); _s('cfg-inst2',cfg.inst2);
+    _s('cfg-dept',cfg.dept);   _s('cfg-sub',cfg.sub);
+    _s('cfg-code',cfg.code);   _s('cfg-prof',cfg.prof);
+    _s('cfg-year',cfg.year);   _s('cfg-diva',cfg.divA);
+    _s('cfg-divb',cfg.divB);
+    } catch(e) { /* panel not ready yet, skip fill */ }
   }
 
   window.toggleGen = function() {
